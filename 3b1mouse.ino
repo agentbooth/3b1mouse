@@ -3,7 +3,10 @@
 #include <SoftwareSerial.h>
 #include "PS2Mouse.h"
 
-// start of mouse packet, may be injected by logic built into keyboard
+#define RxPin 2
+#define TxPin 3
+
+// start of mouse packet, injected by logic built into keyboard
 #define BEGMOUSE 0xCE
 // start of keyboard packet
 #define BEGKBD 0xDF
@@ -20,10 +23,7 @@
 PS2Mouse mouse(5,6);  // clk, data
 
 // need to use Software Serial as it supports inverse logic for the comm
-// likely need to use Arduino pins that support PWM (e.g. 3,5,6,9,10,11)
-// had problems when using pin 9 for Rx for some reason
-// hooking up the Rx line seems to result in issues
-SoftwareSerial softSerial(2,3,true);  // Rx, Tx, inverse_logic=true!
+SoftwareSerial softSerial(RxPin,TxPin,true);  // Rx, Tx, inverse_logic=true!
 
 void setup() {
 #ifdef DEBUG_TO_USB
@@ -31,8 +31,8 @@ void setup() {
   while(!Serial);
   Serial.println("debugging started");
 #endif
-  pinMode(2, INPUT);
-  pinMode(3, OUTPUT);
+  pinMode(RxPin, INPUT);
+  pinMode(TxPin, OUTPUT);
   softSerial.begin(1200);
  
   mouse.begin();
@@ -58,7 +58,7 @@ void loop() {
   {
     lastbut = unixpc[0] & 7;
 
-    //transition to KMOUSE state, keyboard controller is probably injecting this
+    //transition to KMOUSE state, logic in keyboard is injecting this
     //softSerial.write(BEGMOUSE);
     softSerial.write(unixpc[0]);
     softSerial.write(unixpc[1]);
@@ -66,14 +66,16 @@ void loop() {
 
     // need to double send BEGKBD (0xDF) if it's ever encountered
     // only possible in 3rd byte as high bit is never set in byte 0 or byte 1
-    // keyboard controller probably takes care of this so likely not needed
+    // logic in keyboard should take care of this
     //if (unixpc[2]==BEGKBD) softSerial.write(BEGKBD);
 
+    //untested - this may work if you connect softSerial TxPin directly to the Rx pin on the motherboard port
+    //(the port that the keyboard cable plugs into)
 #ifdef KB_TEST
     if ((unixpc[0] & 5) == 5) // L&R buttons pressed
     {
       softSerial.write(BEGKBD);
-      softSerial.write(0x67|KEY_LIST_END);  // send a char as a test with KEY_LIST_END
+      softSerial.write(0x67|KEY_LIST_END);  // send a 'g' char as a test with KEY_LIST_END
       softSerial.write(KEY_ALL_UP);
       Serial.println("g sent");
     }
@@ -81,7 +83,7 @@ void loop() {
 
     // transition to KQUOTE state, next BEGMOUSE will return to KMOUSE state
     // anything else will be treated as kbd char and transition back to KNORM (kbd) state
-    // don't need to send it back to kbd state, keyboard controller probably takes care of this
+    // don't need to send it back to kbd state, logic in keyboard takes care of this
     //softSerial.write(BEGKBD);
 
 #ifdef DEBUG_TO_USB
@@ -96,8 +98,10 @@ void loop() {
 #endif
   }
 
-  // debug incoming commands from CPU
+  // debug incoming commands from CPU (e.g. CAPS LOCK LED ON/OFF)
+  // TxPin on the mouse port is NOT connected to the mouse so this likely will not work
+  // did not work for me - may work if you connect softSerial RxPin to Tx Pin on the motherboard port
   //if (softSerial.available()) Serial.println(softSerial.read(), HEX);
 
-  delay(40);  // 25 Hz (don't exceed 1200 baud, max say 4 byte mouse packets @ 30 Hz)
+  delay(25);  // 40 Hz (don't exceed 1200 baud = roughly 3 byte mouse packets @ 40 Hz)
 }
